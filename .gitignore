@@ -31,3 +31,15 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# --- Ajouts DevSecOps ---
+target/
+.idea/
+*.iml
+.vscode/
+application-local.properties
+application-local.yml
+.env
+.env.*
+logs/
+*.log
