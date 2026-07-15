@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: gitleaks
         name: gitleaks (detect secrets)
-        entry: gitleaks protect --staged --verbose --redact
+        entry: gitleaks git --pre-commit --staged --verbose --redact
         language: system
         pass_filenames: false
 
