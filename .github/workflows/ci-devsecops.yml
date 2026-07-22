@@ -7,9 +7,11 @@ on:
     branches: [main]
 
 jobs:
+
   build:
-    name: Build et tests
-    runs-on: ubuntu-latest
+    name: Build, Tests et SonarQube
+    runs-on: [self-hosted, Linux, X64]
+
     steps:
       - name: Checkout du code
         uses: actions/checkout@v4
@@ -24,9 +26,19 @@ jobs:
       - name: Build et tests Maven
         run: ./mvnw -B verify
 
+      - name: Analyse SonarQube
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          ./mvnw org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.projectKey=backend \
+            -Dsonar.host.url=http://localhost:9000 \
+            -Dsonar.token=${SONAR_TOKEN}
+
   secrets-scan:
     name: Detection de secrets (Gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
+
     steps:
       - name: Checkout du code (historique complet)
         uses: actions/checkout@v4
@@ -40,7 +52,8 @@ jobs:
 
   dependencies-scan:
     name: Scan des dependances (Trivy)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
+
     steps:
       - name: Checkout du code
         uses: actions/checkout@v4
