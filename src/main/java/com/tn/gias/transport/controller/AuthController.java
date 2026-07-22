@@ -43,11 +43,11 @@ public class AuthController {
         Utilisateur u = service.findByEmail(user.getEmail());
 
         if (u == null) {
-            throw new RuntimeException("User not found");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Email ou mot de passe incorrect");
         }
 
         if (!passwordEncoder.matches(user.getMotDePasse(), u.getMotDePasse())) {
-            throw new RuntimeException("Mot de passe incorrect");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Email ou mot de passe incorrect");
         }
 
         // 🔥 هنا نبعث role
