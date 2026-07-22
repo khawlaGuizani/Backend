@@ -28,7 +28,7 @@ jobs:
 
       - name: Analyse SonarQube
         env:
-          SONAR_TOKEN: ${{ secrets.tokensonar }}
+          SONAR_TOKEN: ${{ secrets.githubtoken }}
         run: |
           ./mvnw org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
             -Dsonar.projectKey=backend \
