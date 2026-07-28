@@ -290,7 +290,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Trivy scan — SARIF (for code scanning)
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: sarif
@@ -300,7 +300,7 @@ jobs:
           exit-code: '0'
 
       - name: Trivy scan — HTML report
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: template
@@ -310,7 +310,7 @@ jobs:
           exit-code: '0'
 
       - name: Trivy scan — fail on CRITICAL with a fix available
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: table
