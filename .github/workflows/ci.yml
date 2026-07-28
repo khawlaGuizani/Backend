@@ -170,7 +170,7 @@ jobs:
           if [ -n "$NVD_API_KEY" ]; then
             NVD_ARGS="-DnvdApiKey=${NVD_API_KEY}"
           fi
-          ./mvnw -B org.owasp:dependency-check-maven:12.1.0:check \
+          ./mvnw -B org.owasp:dependency-check-maven:12.2.2:check \
             -DdataDirectory=${{ env.DC_DATA_DIR }} \
             -DsuppressionFiles=security/dependency-check-suppressions.xml \
             -Dformats=HTML,JSON,SARIF \
