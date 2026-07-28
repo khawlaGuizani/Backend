@@ -10,7 +10,7 @@ on:
 env:
   JAVA_VERSION: '17'
   JAVA_DISTRIBUTION: 'temurin'
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/backend
+  IMAGE_NAME: ghcr.io/khawlaguizani/backend
   DC_DATA_DIR: ${{ github.workspace }}/.dependency-check-data
 
 permissions:
