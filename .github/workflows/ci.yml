@@ -1,0 +1,411 @@
+name: Backend CI/DevSecOps
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: '17'
+  JAVA_DISTRIBUTION: 'temurin'
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/backend
+  DC_DATA_DIR: ${{ github.workspace }}/.dependency-check-data
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  packages: write
+
+jobs:
+  # ---------------------------------------------------------------------
+  # 1. Build, unit tests, coverage, SonarCloud static analysis
+  # ---------------------------------------------------------------------
+  build-test-sonar:
+    name: Build, Test & SonarCloud
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history required for SonarCloud new-code analysis
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Build, run unit tests and generate JaCoCo coverage
+        run: ./mvnw -B clean verify
+
+      - name: Publish JUnit test report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Backend JUnit Results
+          path: 'target/surefire-reports/*.xml'
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: SonarCloud analysis
+        if: ${{ env.SONAR_TOKEN != '' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          ./mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.projectKey=khawlaGuizani_Backend \
+            -Dsonar.organization=khawlaguizani \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.token=${SONAR_TOKEN} \
+            -Dsonar.java.coveragePlugin=jacoco \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
+            -Dsonar.junit.reportPaths=target/surefire-reports
+
+      - name: Skip SonarCloud (SONAR_TOKEN not configured)
+        if: ${{ env.SONAR_TOKEN == '' }}
+        run: echo "::warning::SONAR_TOKEN secret is not set — skipping SonarCloud analysis. See README-DEVSECOPS.md."
+
+      - name: Upload JUnit & JaCoCo reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-junit-jacoco-reports
+          path: |
+            target/surefire-reports/**
+            target/site/jacoco/**
+          retention-days: 30
+
+      - name: Upload application JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: target/*.jar
+          retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # 2. Secret scanning — Gitleaks (blocking)
+  # ---------------------------------------------------------------------
+  gitleaks:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        run: |
+          mkdir -p reports/gitleaks
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source /repo --config /repo/security/gitleaks.toml \
+            --report-format sarif --report-path /repo/reports/gitleaks/gitleaks.sarif \
+            --redact --verbose --exit-code 1
+        continue-on-error: false
+
+      - name: Generate human-readable Gitleaks report
+        if: always()
+        run: |
+          mkdir -p reports/gitleaks
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source /repo --config /repo/security/gitleaks.toml \
+            --report-format json --report-path /repo/reports/gitleaks/gitleaks.json \
+            --redact --exit-code 0
+
+      - name: Upload Gitleaks SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/gitleaks/gitleaks.sarif
+          category: gitleaks
+
+      - name: Upload Gitleaks reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-reports
+          path: reports/gitleaks/**
+          retention-days: 30
+
+  # ---------------------------------------------------------------------
+  # 3. Dependency scanning — OWASP Dependency-Check
+  # ---------------------------------------------------------------------
+  dependency-check:
+    name: Dependency Scan (OWASP Dependency-Check)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Cache OWASP Dependency-Check NVD database
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DC_DATA_DIR }}
+          key: dependency-check-db-${{ github.run_id }}
+          restore-keys: dependency-check-db-
+
+      - name: Run OWASP Dependency-Check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          NVD_ARGS=""
+          if [ -n "$NVD_API_KEY" ]; then
+            NVD_ARGS="-DnvdApiKey=${NVD_API_KEY}"
+          fi
+          ./mvnw -B org.owasp:dependency-check-maven:12.1.0:check \
+            -DdataDirectory=${{ env.DC_DATA_DIR }} \
+            -DsuppressionFiles=security/dependency-check-suppressions.xml \
+            -Dformats=HTML,JSON,SARIF \
+            -DfailBuildOnCVSS=9 \
+            -DassemblyAnalyzerEnabled=false \
+            $NVD_ARGS
+
+      - name: Upload Dependency-Check SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: target/dependency-check-report.sarif
+          category: owasp-dependency-check
+
+      - name: Upload Dependency-Check reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-dependency-check-reports
+          path: target/dependency-check-report.*
+          retention-days: 30
+
+  # ---------------------------------------------------------------------
+  # 4. SAST — Semgrep
+  # ---------------------------------------------------------------------
+  semgrep:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          semgrep scan \
+            --config security/semgrep.yml \
+            --config p/java \
+            --config p/owasp-top-ten \
+            --config p/secrets \
+            --sarif --output semgrep-results.sarif \
+            --error || true
+
+      - name: Upload Semgrep SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-results.sarif
+          category: semgrep
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-semgrep-report
+          path: semgrep-results.sarif
+          retention-days: 30
+
+  # ---------------------------------------------------------------------
+  # 5. License compliance scan
+  # ---------------------------------------------------------------------
+  license-scan:
+    name: License Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Generate third-party license report
+        run: |
+          ./mvnw -B org.codehaus.mojo:license-maven-plugin:2.4.0:aggregate-third-party-report \
+            -Dlicense.outputDirectory=target/licenses
+
+      - name: Upload license report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-license-report
+          path: target/licenses/**
+          retention-days: 30
+
+  # ---------------------------------------------------------------------
+  # 6. Docker image build, Trivy scan, SBOM (Syft), SBOM scan (Grype)
+  # ---------------------------------------------------------------------
+  docker-image-security:
+    name: Docker Build & Image Security (Trivy/Syft/Grype)
+    runs-on: ubuntu-latest
+    needs: [build-test-sonar]
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy scan — SARIF (for code scanning)
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-unfixed: false
+          exit-code: '0'
+
+      - name: Trivy scan — HTML report
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: template
+          template: '@/contrib/html.tpl'
+          output: trivy-report.html
+          severity: CRITICAL,HIGH,MEDIUM
+          exit-code: '0'
+
+      - name: Trivy scan — fail on CRITICAL with a fix available
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Upload Trivy SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-backend-image
+
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: cyclonedx-json
+          output-file: sbom-backend.cyclonedx.json
+
+      - name: Scan SBOM for vulnerabilities (Grype)
+        uses: anchore/scan-action@v6
+        id: grype
+        with:
+          sbom: sbom-backend.cyclonedx.json
+          fail-build: false
+          severity-cutoff: high
+          output-format: sarif
+
+      - name: Upload Grype SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.grype.outputs.sarif }}
+          category: grype-backend-sbom
+
+      - name: Upload container security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-container-security-reports
+          path: |
+            trivy-results.sarif
+            trivy-report.html
+            sbom-backend.cyclonedx.json
+            ${{ steps.grype.outputs.sarif }}
+          retention-days: 30
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image to GHCR
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------------
+  # 7. Consolidated security gate
+  # ---------------------------------------------------------------------
+  security-gate:
+    name: Security Gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - build-test-sonar
+      - gitleaks
+      - dependency-check
+      - semgrep
+      - license-scan
+      - docker-image-security
+    steps:
+      - name: Evaluate gate
+        run: |
+          echo "build-test-sonar:      ${{ needs.build-test-sonar.result }}"
+          echo "gitleaks:               ${{ needs.gitleaks.result }}"
+          echo "dependency-check:       ${{ needs.dependency-check.result }}"
+          echo "semgrep:                ${{ needs.semgrep.result }}"
+          echo "license-scan:           ${{ needs.license-scan.result }}"
+          echo "docker-image-security:  ${{ needs.docker-image-security.result }}"
+          if [ "${{ needs.build-test-sonar.result }}" != "success" ] || [ "${{ needs.gitleaks.result }}" != "success" ]; then
+            echo "::error::Security gate failed — build/tests or secret scanning did not pass."
+            exit 1
+          fi
+          echo "Security gate passed."

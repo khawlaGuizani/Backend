@@ -1,0 +1,54 @@
+title = "gitleaks config - Backend (Spring Boot / transport)"
+
+# Start from Gitleaks' maintained default ruleset, then extend/tighten it.
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Project-specific rules
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "spring-datasource-password"
+description = "Hardcoded Spring datasource / JDBC password"
+regex = '''(?i)spring\.datasource\.password\s*=\s*[^$\s]{4,}'''
+tags = ["spring", "database", "credentials"]
+
+[[rules]]
+id = "spring-mail-password"
+description = "Hardcoded SMTP / mail password"
+regex = '''(?i)spring\.mail\.password\s*=\s*[^$\s]{4,}'''
+tags = ["spring", "smtp", "credentials"]
+
+[[rules]]
+id = "jwt-hs-secret"
+description = "Hardcoded JWT HMAC signing secret"
+regex = '''(?i)(jwt[._-]?secret|jjwt[._-]?secret)\s*[:=]\s*['"][A-Za-z0-9+/=_-]{16,}['"]'''
+tags = ["jwt", "secret"]
+
+[[rules]]
+id = "sqlserver-connection-string"
+description = "SQL Server / JDBC connection string with embedded credentials"
+regex = '''jdbc:sqlserver://[^;]+;.*password=[^;'"\s]{4,}'''
+tags = ["database", "jdbc"]
+
+# ---------------------------------------------------------------------------
+# Allowlist — reduce known false positives
+# ---------------------------------------------------------------------------
+[allowlist]
+description = "Global allowlist"
+paths = [
+  '''(?i)\.git/''',
+  '''target/''',
+  '''\.mvn/''',
+  '''mvnw''',
+  '''mvnw\.cmd''',
+  '''src/test/resources/application-test\.properties''',
+]
+
+regexes = [
+  # Placeholders / env-var references are not secrets
+  '''\$\{[A-Z_][A-Z0-9_]*\}''',
+  '''CHANGE_ME''',
+  '''your-.*-here''',
+]

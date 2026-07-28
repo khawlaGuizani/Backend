@@ -43,3 +43,4 @@ application-local.yml
 .env.*
 logs/
 *.log
+rasp-logs/

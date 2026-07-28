@@ -57,6 +57,13 @@ public class SecurityConfig {
                                 "/swagger-ui.html"
                         ).permitAll()
 
+                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info")
+                        .permitAll()
+
+                        // Deliberately-vulnerable RASP demonstration endpoints — disabled by
+                        // default (rasp.demo.enabled=false); see README-DEVSECOPS.md.
+                        .requestMatchers("/api/rasp-demo/**").permitAll()
+
                         .requestMatchers(HttpMethod.GET, "/api/articles").hasAnyRole("ADMIN", "DEMANDEUR")
                         .requestMatchers(HttpMethod.GET, "/api/articles/**").hasAnyRole("ADMIN", "DEMANDEUR")
                         .requestMatchers(HttpMethod.POST, "/api/articles").hasRole("ADMIN")

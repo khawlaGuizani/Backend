@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+    <!--
+        OWASP Dependency-Check suppression file.
+
+        Add an entry here ONLY after triaging a specific CVE and confirming
+        it is a false positive or genuinely not exploitable in this
+        application's context. Always include a <notes> explaining why, and
+        prefer scoping suppressions to a single <cve> rather than an entire
+        package where possible. Never suppress broadly just to make the
+        pipeline pass.
+
+        Example:
+
+        <suppress>
+            <notes><![CDATA[
+                CVE-2023-XXXXX affects the XML parsing feature of libX,
+                which this project does not use. Verified 2026-07-28.
+            ]]></notes>
+            <packageUrl regex="true">^pkg:maven/org\.example/libx@.*$</packageUrl>
+            <cve>CVE-2023-XXXXX</cve>
+        </suppress>
+    -->
+</suppressions>

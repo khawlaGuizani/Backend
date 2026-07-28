@@ -1,0 +1,121 @@
+rules:
+  - id: java-sql-injection-string-concat
+    languages: [java]
+    severity: ERROR
+    message: >-
+      Possible SQL Injection: a SQL string is built via concatenation and
+      passed to Statement/JdbcTemplate. Use PreparedStatement / parameterized
+      JPQL, or a Spring Data derived/@Query method with bind parameters.
+    patterns:
+      - pattern-either:
+          - pattern: $STMT.executeQuery("..." + $VAR + "...")
+          - pattern: $STMT.execute("..." + $VAR + "...")
+          - pattern: $STMT.executeUpdate("..." + $VAR + "...")
+          - pattern: $JDBC.query("..." + $VAR + "...", ...)
+          - pattern: $EM.createNativeQuery("..." + $VAR + "...")
+    metadata:
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 - Injection"
+
+  - id: java-command-injection
+    languages: [java]
+    severity: ERROR
+    message: >-
+      Possible OS Command Injection: user-influenced data reaches
+      Runtime.exec()/ProcessBuilder. Validate/allowlist input, or avoid
+      shell invocation entirely.
+    patterns:
+      - pattern-either:
+          - pattern: Runtime.getRuntime().exec($CMD)
+          - pattern: new ProcessBuilder($ARGS)
+    metadata:
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+
+  - id: java-path-traversal
+    languages: [java]
+    severity: ERROR
+    message: >-
+      Possible Path Traversal: a file path derived from external input is
+      used directly. Normalize and validate against an allowed base
+      directory before use.
+    patterns:
+      - pattern-either:
+          - pattern: new File($BASE, $USERINPUT)
+          - pattern: new FileInputStream($USERINPUT)
+          - pattern: new FileOutputStream($USERINPUT)
+          - pattern: Paths.get($USERINPUT)
+    metadata:
+      cwe: "CWE-22: Path Traversal"
+      owasp: "A01:2021 - Broken Access Control"
+
+  - id: java-hardcoded-secret-assignment
+    languages: [java]
+    severity: WARNING
+    message: >-
+      A field/variable named like a secret is assigned a hardcoded string
+      literal. Externalize via environment variables or a secrets manager.
+    patterns:
+      - pattern-regex: '(?i)(password|secret|apikey|api_key|token)\s*=\s*"[^"\$]{4,}"'
+    paths:
+      exclude:
+        - "src/test/**"
+    metadata:
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+
+  - id: java-xml-external-entity
+    languages: [java]
+    severity: ERROR
+    message: >-
+      XML parser factory created without disabling external entities/DTDs —
+      vulnerable to XXE. Use RaspXmlUtils (com.tn.gias.transport.rasp) or
+      explicitly disable external-general-entities, external-parameter-entities
+      and set FEATURE_SECURE_PROCESSING.
+    patterns:
+      - pattern-either:
+          - pattern: DocumentBuilderFactory.newInstance()
+          - pattern: SAXParserFactory.newInstance()
+          - pattern: XMLInputFactory.newInstance()
+      - pattern-not-inside: |
+          class RaspXmlUtils { ... }
+    metadata:
+      cwe: "CWE-611: XML External Entity Reference"
+      owasp: "A05:2021 - Security Misconfiguration"
+
+  - id: java-unsafe-deserialization
+    languages: [java]
+    severity: ERROR
+    message: >-
+      ObjectInputStream is used without an ObjectInputFilter, which is
+      vulnerable to Java deserialization gadget-chain attacks. Ensure the
+      global RASP ObjectInputFilter (RaspDeserializationConfig) is active,
+      or attach a dedicated filter to this stream.
+    pattern: new ObjectInputStream($SRC)
+    metadata:
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+
+  - id: java-spel-expression-injection
+    languages: [java]
+    severity: ERROR
+    message: >-
+      A Spring Expression Language (SpEL) expression is parsed from
+      dynamically built/user-influenced input. This can lead to remote code
+      execution. Never evaluate SpEL built from request data.
+    patterns:
+      - pattern-either:
+          - pattern: $PARSER.parseExpression($EXPR + ...)
+          - pattern: new SpelExpressionParser().parseExpression($USERINPUT)
+    metadata:
+      cwe: "CWE-917: Expression Language Injection"
+
+  - id: java-permitall-security-rule
+    languages: [java]
+    severity: INFO
+    message: >-
+      Endpoint(s) explicitly permitted without authentication
+      (permitAll()). Confirm this is intentional and does not expose
+      sensitive data or state-changing operations.
+    pattern: $AUTH.permitAll()
+    metadata:
+      owasp: "A01:2021 - Broken Access Control"
