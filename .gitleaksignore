@@ -1,0 +1,8 @@
+# Historical secrets that were committed to the repo's very first commit
+# (ae65029, old "transport/transport/..." path since restructured to
+# backend/src/main/resources/application.properties). Both credentials
+# have been rotated; these entries only suppress the permanent, unremovable
+# git-history findings so CI doesn't re-flag already-remediated secrets.
+# See README-DEVSECOPS.md for the rotation record.
+ae650295864de52b21200667fdca9892411602d1:transport/transport/src/main/resources/application.properties:spring-mail-password:14
+ae650295864de52b21200667fdca9892411602d1:transport/transport/src/main/resources/application.properties:spring-datasource-password:3
