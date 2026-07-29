@@ -298,11 +298,13 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM
           ignore-unfixed: false
           exit-code: '0'
+
       - name: Download Trivy HTML template
         run: |
           mkdir -p contrib
           curl -L https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -o contrib/html.tpl
-           - name: Trivy scan — HTML report
+
+      - name: Trivy scan — HTML report
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
