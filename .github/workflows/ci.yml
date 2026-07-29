@@ -110,6 +110,7 @@ jobs:
           mkdir -p reports/gitleaks
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
             detect --source /repo --config /repo/security/gitleaks.toml \
+            --gitleaks-ignore-path /repo/.gitleaksignore \
             --report-format sarif --report-path /repo/reports/gitleaks/gitleaks.sarif \
             --redact --verbose --exit-code 1
         continue-on-error: false
@@ -120,6 +121,7 @@ jobs:
           mkdir -p reports/gitleaks
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
             detect --source /repo --config /repo/security/gitleaks.toml \
+            --gitleaks-ignore-path /repo/.gitleaksignore \
             --report-format json --report-path /repo/reports/gitleaks/gitleaks.json \
             --redact --exit-code 0
 
