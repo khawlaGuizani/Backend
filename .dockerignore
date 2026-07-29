@@ -1,0 +1,9 @@
+target
+.git
+.github
+.idea
+.vscode
+security
+*.md
+.env
+.env.*

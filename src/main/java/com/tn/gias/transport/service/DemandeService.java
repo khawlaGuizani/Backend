@@ -4,6 +4,8 @@ import com.tn.gias.transport.dto.DemandeRequest;
 import com.tn.gias.transport.entity.*;
 import com.tn.gias.transport.repository.*;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +24,8 @@ import java.util.List;
 import java.time.LocalDateTime;
 @Service
 public class DemandeService {
+
+    private static final Logger log = LoggerFactory.getLogger(DemandeService.class);
 
     private final DemandeRepository demandeRepository;
     private final SiteRepository siteRepository;
@@ -134,12 +138,17 @@ public class DemandeService {
         d.setStatut(StatutDemande.VALIDE);
         d.setDateValidation(LocalDateTime.now());
 
-        // 📧 email
-        emailService.sendEmail(
-                d.getDemandeur().getEmail(),
-                "Demande validée",
-                "Votre demande N°" + d.getId() + " a été validée"
-        );
+        // 📧 email — notification best-effort: a mail outage must not block
+        // the actual stock/status update, which is the real business action.
+        try {
+            emailService.sendEmail(
+                    d.getDemandeur().getEmail(),
+                    "Demande validée",
+                    construireMessageValidation(d)
+            );
+        } catch (Exception e) {
+            log.warn("Échec d'envoi de l'email de validation pour la demande {}: {}", d.getId(), e.getMessage());
+        }
 
         // 📄 CSV
         genererCSV(d);
@@ -168,16 +177,46 @@ public class DemandeService {
         d.setStatut(StatutDemande.REJETE);
         d.setDateValidation(LocalDateTime.now());
 
-        // 🔥 EMAIL AVEC MOTIF
-        emailService.sendEmail(
-                d.getDemandeur().getEmail(),
-                "Demande refusée",
-                "Votre demande a été refusée.\nMotif : " + motif
-        );
+        // 🔥 EMAIL AVEC MOTIF — best-effort, ne doit pas bloquer le rejet lui-même.
+        try {
+            emailService.sendEmail(
+                    d.getDemandeur().getEmail(),
+                    "Demande refusée",
+                    "Votre demande a été refusée.\nMotif : " + motif
+            );
+        } catch (Exception e) {
+            log.warn("Échec d'envoi de l'email de refus pour la demande {}: {}", d.getId(), e.getMessage());
+        }
 
         return demandeRepository.save(d);
     }
 
+
+    // 📧 Corps de l'email de notification de validation : date de
+    // validation, site de départ/destination et détail des articles.
+    private String construireMessageValidation(Demande d) {
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+        LocalDateTime dateValidation = d.getDateValidation() != null
+                ? d.getDateValidation()
+                : LocalDateTime.now();
+
+        StringBuilder message = new StringBuilder();
+        message.append("Votre demande N°").append(d.getId()).append(" a été validée.\n\n");
+        message.append("Date de validation : ").append(dateValidation.format(formatter)).append("\n");
+        message.append("Site de départ : ").append(d.getSiteDepart().getLibelle()).append("\n");
+        message.append("Site de destination : ").append(d.getSiteArrivee().getLibelle()).append("\n");
+        message.append("Articles :\n");
+
+        for (LigneDemande l : d.getLignes()) {
+            message.append(" - ").append(l.getArticle().getCodeArticle())
+                    .append(" : ").append(l.getQuantite())
+                    .append(" ").append(l.getArticle().getUnit())
+                    .append("\n");
+        }
+
+        return message.toString();
+    }
 
     // 🔥 CSV
 
@@ -191,25 +230,27 @@ public class DemandeService {
 
             FileWriter writer = new FileWriter(file);
 
-            LocalDateTime dateTime = d.getDateDemande();
+            // La date de validation n'est renseignée qu'une fois la demande
+            // traitée (valider/refuser) ; repli sur maintenant si absente.
+            LocalDateTime dateTime = d.getDateValidation() != null
+                    ? d.getDateValidation()
+                    : LocalDateTime.now();
 
             DateTimeFormatter formatter =
                     DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
             // 🔥 HEADER
-            writer.append("ID;DATE;TYPE;DEP;DEST;ARTICLE;QTE;CAMION\n");
+            writer.append("ID;DATE_VALIDATION;SITE_DEPART;SITE_DESTINATION;ARTICLE;QUANTITE\n");
 
             // 🔥 LIGNES
             for (LigneDemande l : d.getLignes()) {
 
                 writer.append(String.valueOf(d.getId())).append(";")
                         .append(dateTime.format(formatter)).append(";")
-                        .append(l.getType() == TypeMouvement.ENTREE ? "E" : "S").append(";")
-                        .append(d.getSiteDepart().getCodeSite()).append(";")
-                        .append(d.getSiteArrivee().getCodeSite()).append(";")
+                        .append(d.getSiteDepart().getLibelle()).append(";")
+                        .append(d.getSiteArrivee().getLibelle()).append(";")
                         .append(l.getArticle().getCodeArticle()).append(";")
-                        .append(String.valueOf(l.getQuantite())).append(";")
-                        .append(d.getCamion().getImmatriculation())
+                        .append(String.valueOf(l.getQuantite()))
                         .append("\n");
             }
 

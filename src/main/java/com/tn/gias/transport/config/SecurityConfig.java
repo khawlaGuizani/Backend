@@ -50,6 +50,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
 
+                        // Without this, Boot's error-handling forward to /error gets
+                        // re-secured by Spring Security; since it's unauthenticated,
+                        // Http403ForbiddenEntryPoint overwrites the real status (e.g. a
+                        // controller's 401/404) with an empty 403.
+                        .requestMatchers("/error").permitAll()
+
                         // 🔥 هذا الحل
                         .requestMatchers(
                                 "/v3/api-docs/**",

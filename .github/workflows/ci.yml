@@ -268,7 +268,7 @@ jobs:
   docker-image-security:
     name: Docker Build & Image Security (Trivy/Syft/Grype)
     runs-on: ubuntu-latest
-    needs: [build-test-sonar]
+    needs: [build-test-sonar, gitleaks]
     permissions:
       contents: read
       packages: write
@@ -407,3 +407,12 @@ jobs:
             exit 1
           fi
           echo "Security gate passed."
+
+      - name: Trigger deployment
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: token ${{ secrets.DISPATCH_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository_owner }}/devsecops-platform/dispatches" \
+            -d '{"event_type":"security-gate-passed"}'

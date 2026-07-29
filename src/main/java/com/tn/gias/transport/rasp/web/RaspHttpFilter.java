@@ -171,6 +171,6 @@ public class RaspHttpFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // Never inspect the actuator health probe used by Docker/orchestrators.
-        return request.getRequestURI().startsWith("/actuator/health");
+        return request.getRequestURI().startsWith("/actuator/health") || request.getRequestURI().startsWith("/api/auth");
     }
 }
