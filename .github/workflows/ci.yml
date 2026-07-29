@@ -409,10 +409,12 @@ jobs:
           echo "Security gate passed."
 
       - name: Trigger deployment
-        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && secrets.DISPATCH_TOKEN != ''
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && env.DISPATCH_TOKEN != ''
+        env:
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: |
           curl -fsS -X POST \
-            -H "Authorization: token ${{ secrets.DISPATCH_TOKEN }}" \
+            -H "Authorization: token $DISPATCH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository_owner }}/devsecops-platform/dispatches" \
             -d '{"event_type":"security-gate-passed"}'
