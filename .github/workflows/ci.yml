@@ -409,7 +409,7 @@ jobs:
           echo "Security gate passed."
 
       - name: Trigger deployment
-        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && secrets.DISPATCH_TOKEN != ''
         run: |
           curl -fsS -X POST \
             -H "Authorization: token ${{ secrets.DISPATCH_TOKEN }}" \
