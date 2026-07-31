@@ -1,3 +1,4 @@
+
 name: Backend CI/DevSecOps
 
 on:
@@ -418,3 +419,24 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository_owner }}/devsecops-platform/dispatches" \
             -d '{"event_type":"security-gate-passed"}'
+# ---------------------------------------------------------------------
+  # 8. Deploy to K3s
+  # ---------------------------------------------------------------------
+  deploy:
+    name: Deploy to K3s
+    runs-on: ubuntu-latest
+    needs: [security-gate]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            kubectl rollout restart deployment transport-backend -n transport
+            kubectl rollout restart deployment transport-frontend -n transport
+            kubectl rollout status deployment transport-backend -n transport --timeout=120s
+            kubectl rollout status deployment transport-frontend -n transport --timeout=120s
+            echo "Deployment successful!"
