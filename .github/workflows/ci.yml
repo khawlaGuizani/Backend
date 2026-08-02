@@ -26,7 +26,7 @@ jobs:
   # ---------------------------------------------------------------------
   build-test-sonar:
     name: Build, Test & SonarCloud
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -99,7 +99,7 @@ jobs:
   # ---------------------------------------------------------------------
   gitleaks:
     name: Secret Scan (Gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout repository (full history)
         uses: actions/checkout@v4
@@ -146,7 +146,7 @@ jobs:
   # ---------------------------------------------------------------------
   dependency-check:
     name: Dependency Scan (OWASP Dependency-Check)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -201,7 +201,7 @@ jobs:
   # ---------------------------------------------------------------------
   semgrep:
     name: SAST (Semgrep)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     container:
       image: semgrep/semgrep
     steps:
@@ -238,7 +238,7 @@ jobs:
   # ---------------------------------------------------------------------
   license-scan:
     name: License Scan
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -268,7 +268,7 @@ jobs:
   # ---------------------------------------------------------------------
   docker-image-security:
     name: Docker Build & Image Security (Trivy/Syft/Grype)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [build-test-sonar, gitleaks]
     permissions:
       contents: read
@@ -385,7 +385,7 @@ jobs:
   # ---------------------------------------------------------------------
   security-gate:
     name: Security Gate
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: always()
     needs:
       - build-test-sonar
@@ -424,19 +424,14 @@ jobs:
   # ---------------------------------------------------------------------
   deploy:
     name: Deploy to K3s
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [security-gate]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            kubectl rollout restart deployment transport-backend -n transport
-            kubectl rollout restart deployment transport-frontend -n transport
-            kubectl rollout status deployment transport-backend -n transport --timeout=120s
-            kubectl rollout status deployment transport-frontend -n transport --timeout=120s
-            echo "Deployment successful!"
+      - name: Deploy to K3s
+        run: |
+          kubectl rollout restart deployment/transport-backend -n transport
+          kubectl rollout restart deployment/transport-frontend -n transport
+          kubectl rollout status deployment/transport-backend -n transport --timeout=120s
+          kubectl rollout status deployment/transport-frontend -n transport --timeout=120s
+          echo "Deployment successful!"
