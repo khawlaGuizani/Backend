@@ -54,10 +54,14 @@ public class DemandeService {
     // 🔥 CREATE DEMANDE
     public Demande save(DemandeRequest request) {
 
+        validateCreateRequest(request);
+
         Demande d = new Demande();
 
         d.setLibelle(request.getLibelle());
         d.setCapacite(request.getCapacite());
+        d.setTypeMouvement(TypeMouvement.valueOf(request.getTypeMouvement()));
+        d.setDescriptionMouvement(request.getDescriptionMouvement().trim());
         d.setDateValidation(LocalDateTime.now());
         d.setStatut(StatutDemande.EN_ATTENTE);
         d.setDateDemande(LocalDateTime.now());
@@ -84,10 +88,8 @@ public class DemandeService {
             ld.setArticle(articleRepository.findById(l.getArticleId()).orElseThrow());
             ld.setQuantite(l.getQuantite());
             ld.setUnite(l.getUnite());
-
-            // 🔥 NOUVEAU
-            ld.setType(TypeMouvement.valueOf(l.getType()));
-            ld.setDescription(l.getDescription());
+            // Keep the legacy line value populated for existing consumers.
+            ld.setType(d.getTypeMouvement());
 
             ld.setDemande(d);
 
@@ -97,6 +99,40 @@ public class DemandeService {
         d.setLignes(lignes);
 
         return demandeRepository.save(d);
+    }
+
+    private void validateCreateRequest(DemandeRequest request) {
+        if (request == null || isBlank(request.getLibelle()) || request.getCapacite() <= 0
+                || request.getSiteDepartId() == null || request.getSiteArriveeId() == null
+                || request.getFournisseurId() == null || request.getCamionId() == null) {
+            throw new IllegalArgumentException("Les informations generales sont obligatoires");
+        }
+
+        if (request.getSiteDepartId().equals(request.getSiteArriveeId())) {
+            throw new IllegalArgumentException("Les sites de depart et d'arrivee doivent etre differents");
+        }
+
+        try {
+            TypeMouvement.valueOf(request.getTypeMouvement());
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("Le type de mouvement est obligatoire et invalide");
+        }
+
+        if (isBlank(request.getDescriptionMouvement())) {
+            throw new IllegalArgumentException("La description du mouvement est obligatoire");
+        }
+
+        if (request.getLignes() == null || request.getLignes().isEmpty()) {
+            throw new IllegalArgumentException("Au moins un article est obligatoire");
+        }
+
+        if (request.getLignes().stream().anyMatch(ligne -> ligne == null || ligne.getArticleId() == null || ligne.getQuantite() <= 0)) {
+            throw new IllegalArgumentException("Chaque article doit avoir une quantite superieure a zero");
+        }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     // 🔥 VALIDER
@@ -124,7 +160,7 @@ public class DemandeService {
 
             Article article = l.getArticle();
 
-            if (l.getType() == TypeMouvement.SORTIE) {
+            if (getTypeMouvement(d, l) == TypeMouvement.SORTIE) {
                 article.setQuantite(article.getQuantite() - l.getQuantite());
             }
             else if (l.getType() == TypeMouvement.ENTREE) {
@@ -321,7 +357,7 @@ public class DemandeService {
         }
         for (LigneDemande l : d.getLignes()) {
 
-            if (l.getType() == TypeMouvement.SORTIE) {
+            if (getTypeMouvement(d, l) == TypeMouvement.SORTIE) {
 
                 Article article = l.getArticle();
 
@@ -331,6 +367,10 @@ public class DemandeService {
             }
         }
         return null;
+    }
+
+    private TypeMouvement getTypeMouvement(Demande demande, LigneDemande ligne) {
+        return demande.getTypeMouvement() != null ? demande.getTypeMouvement() : ligne.getType();
     }
 
 

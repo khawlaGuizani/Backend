@@ -435,3 +435,4 @@ jobs:
           kubectl rollout status deployment/transport-backend -n transport --timeout=120s
           kubectl rollout status deployment/transport-frontend -n transport --timeout=120s
           echo "Deployment successful!"
+#-- test

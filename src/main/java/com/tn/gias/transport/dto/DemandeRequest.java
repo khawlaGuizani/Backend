@@ -8,6 +8,8 @@ public class DemandeRequest {
 
     private String libelle;
     private double capacite;
+    private String typeMouvement;
+    private String descriptionMouvement;
 
     private Long siteDepartId;
     private Long siteArriveeId;

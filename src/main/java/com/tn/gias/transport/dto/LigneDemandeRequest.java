@@ -8,7 +8,5 @@ public class LigneDemandeRequest {
     private Long articleId;
     private int quantite;
     private String unite;
-    private String type; // ENTREE / SORTIE
-    private String description;
 
 }

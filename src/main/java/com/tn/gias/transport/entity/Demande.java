@@ -29,6 +29,8 @@ public class Demande {
     @Enumerated(EnumType.STRING)
     private TypeMouvement typeMouvement;
 
+    private String descriptionMouvement;
+
     // 🔗 relations
 
     @ManyToOne
