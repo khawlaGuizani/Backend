@@ -1,4 +1,3 @@
-
 name: Backend CI/DevSecOps
 
 on:
@@ -21,9 +20,6 @@ permissions:
   packages: write
 
 jobs:
-  # ---------------------------------------------------------------------
-  # 1. Build, unit tests, coverage, SonarCloud static analysis
-  # ---------------------------------------------------------------------
   build-test-sonar:
     name: Build, Test & SonarCloud
     runs-on: self-hosted
@@ -31,7 +27,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # full history required for SonarCloud new-code analysis
+          fetch-depth: 0
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -60,7 +56,7 @@ jobs:
           fail-on-error: false
 
       - name: SonarCloud analysis
-        if: ${{ env.SONAR_TOKEN != '' }}
+        if: ${{ secrets.SONAR_TOKEN != '' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
@@ -74,7 +70,7 @@ jobs:
             -Dsonar.junit.reportPaths=target/surefire-reports
 
       - name: Skip SonarCloud (SONAR_TOKEN not configured)
-        if: ${{ env.SONAR_TOKEN == '' }}
+        if: ${{ secrets.SONAR_TOKEN == '' }}
         run: echo "::warning::SONAR_TOKEN secret is not set — skipping SonarCloud analysis. See README-DEVSECOPS.md."
 
       - name: Upload JUnit & JaCoCo reports
@@ -94,9 +90,6 @@ jobs:
           path: target/*.jar
           retention-days: 7
 
-  # ---------------------------------------------------------------------
-  # 2. Secret scanning — Gitleaks (blocking)
-  # ---------------------------------------------------------------------
   gitleaks:
     name: Secret Scan (Gitleaks)
     runs-on: self-hosted
@@ -114,7 +107,6 @@ jobs:
             --gitleaks-ignore-path /repo/.gitleaksignore \
             --report-format sarif --report-path /repo/reports/gitleaks/gitleaks.sarif \
             --redact --verbose --exit-code 1
-        continue-on-error: false
 
       - name: Generate human-readable Gitleaks report
         if: always()
@@ -141,9 +133,6 @@ jobs:
           path: reports/gitleaks/**
           retention-days: 30
 
-  # ---------------------------------------------------------------------
-  # 3. Dependency scanning — OWASP Dependency-Check
-  # ---------------------------------------------------------------------
   dependency-check:
     name: Dependency Scan (OWASP Dependency-Check)
     runs-on: self-hosted
@@ -196,9 +185,6 @@ jobs:
           path: target/dependency-check-report.*
           retention-days: 30
 
-  # ---------------------------------------------------------------------
-  # 4. SAST — Semgrep
-  # ---------------------------------------------------------------------
   semgrep:
     name: SAST (Semgrep)
     runs-on: self-hosted
@@ -233,9 +219,6 @@ jobs:
           path: semgrep-results.sarif
           retention-days: 30
 
-  # ---------------------------------------------------------------------
-  # 5. License compliance scan
-  # ---------------------------------------------------------------------
   license-scan:
     name: License Scan
     runs-on: self-hosted
@@ -263,9 +246,6 @@ jobs:
           path: target/licenses/**
           retention-days: 30
 
-  # ---------------------------------------------------------------------
-  # 6. Docker image build, Trivy scan, SBOM (Syft), SBOM scan (Grype)
-  # ---------------------------------------------------------------------
   docker-image-security:
     name: Docker Build & Image Security (Trivy/Syft/Grype)
     runs-on: self-hosted
@@ -292,7 +272,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Trivy scan — SARIF (for code scanning)
+      - name: Trivy scan - SARIF (for code scanning)
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -307,17 +287,17 @@ jobs:
           mkdir -p contrib
           curl -L https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -o contrib/html.tpl
 
-      - name: Trivy scan — HTML report
+      - name: Trivy scan - HTML report
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: template
-          template: "@contrib/html.tpl"
+          template: '@contrib/html.tpl'
           output: trivy-report.html
           severity: CRITICAL,HIGH,MEDIUM
-          exit-code: "0"
+          exit-code: '0'
 
-      - name: Trivy scan — fail on CRITICAL with a fix available
+      - name: Trivy scan - fail on CRITICAL with a fix available
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -341,6 +321,7 @@ jobs:
           output-file: sbom-backend.cyclonedx.json
 
       - name: Scan SBOM for vulnerabilities (Grype)
+        id: grype
         uses: anchore/scan-action@v6
         with:
           sbom: sbom-backend.cyclonedx.json
@@ -380,9 +361,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ---------------------------------------------------------------------
-  # 7. Consolidated security gate
-  # ---------------------------------------------------------------------
   security-gate:
     name: Security Gate
     runs-on: self-hosted
@@ -404,7 +382,7 @@ jobs:
           echo "license-scan:           ${{ needs.license-scan.result }}"
           echo "docker-image-security:  ${{ needs.docker-image-security.result }}"
           if [ "${{ needs.build-test-sonar.result }}" != "success" ] || [ "${{ needs.gitleaks.result }}" != "success" ]; then
-            echo "::error::Security gate failed — build/tests or secret scanning did not pass."
+            echo "::error::Security gate failed - build/tests or secret scanning did not pass."
             exit 1
           fi
           echo "Security gate passed."
@@ -419,9 +397,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository_owner }}/devsecops-platform/dispatches" \
             -d '{"event_type":"security-gate-passed"}'
-# ---------------------------------------------------------------------
-  # 8. Deploy to K3s
-  # ---------------------------------------------------------------------
+
   deploy:
     name: Deploy to K3s
     runs-on: self-hosted
@@ -435,4 +411,3 @@ jobs:
           kubectl rollout status deployment/transport-backend -n transport --timeout=120s
           kubectl rollout status deployment/transport-frontend -n transport --timeout=120s
           echo "Deployment successful!"
-#--tessssst
