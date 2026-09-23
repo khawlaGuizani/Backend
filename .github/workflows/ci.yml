@@ -23,6 +23,8 @@ jobs:
   build-test-sonar:
     name: Build, Test & SonarCloud
     runs-on: self-hosted
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -56,7 +58,7 @@ jobs:
           fail-on-error: false
 
       - name: SonarCloud analysis
-        if: ${{ secrets.SONAR_TOKEN != '' }}
+        if: ${{ env.SONAR_TOKEN != '' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
@@ -70,7 +72,7 @@ jobs:
             -Dsonar.junit.reportPaths=target/surefire-reports
 
       - name: Skip SonarCloud (SONAR_TOKEN not configured)
-        if: ${{ secrets.SONAR_TOKEN == '' }}
+        if: ${{ env.SONAR_TOKEN == '' }}
         run: echo "::warning::SONAR_TOKEN secret is not set — skipping SonarCloud analysis. See README-DEVSECOPS.md."
 
       - name: Upload JUnit & JaCoCo reports
@@ -365,6 +367,8 @@ jobs:
     name: Security Gate
     runs-on: self-hosted
     if: always()
+    env:
+      DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
     needs:
       - build-test-sonar
       - gitleaks
@@ -389,8 +393,6 @@ jobs:
 
       - name: Trigger deployment
         if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && env.DISPATCH_TOKEN != ''
-        env:
-          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: |
           curl -fsS -X POST \
             -H "Authorization: token $DISPATCH_TOKEN" \
