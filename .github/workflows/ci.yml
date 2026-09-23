@@ -104,11 +104,20 @@ jobs:
       - name: Run Gitleaks
         run: |
           mkdir -p reports/gitleaks
-          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
-            detect --source /repo --config /repo/security/gitleaks.toml \
+
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:/repo" \
+            zricethezav/gitleaks:latest \
+            detect \
+            --source /repo \
+            --config /repo/security/gitleaks.toml \
             --gitleaks-ignore-path /repo/.gitleaksignore \
-            --report-format sarif --report-path /repo/reports/gitleaks/gitleaks.sarif \
-            --redact --verbose --exit-code 1
+            --report-format sarif \
+            --report-path /repo/reports/gitleaks/gitleaks.sarif \
+            --redact \
+            --verbose \
+            --exit-code 1
 
       - name: Generate human-readable Gitleaks report
         if: always()
@@ -245,6 +254,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend-license-report
+
+
           path: target/licenses/**
           retention-days: 30
 
