@@ -162,8 +162,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.DC_DATA_DIR }}
-          key: dependency-check-db-${{ github.run_id }}
-          restore-keys: dependency-check-db-
+          key: dependency-check-db
+          restore-keys: |
+            dependency-check-db-
 
       - name: Run OWASP Dependency-Check
         env:
@@ -194,7 +195,7 @@ jobs:
         with:
           name: backend-dependency-check-reports
           path: target/dependency-check-report.*
-          retention-days: 30
+          retention-days: 100
 
   semgrep:
     name: SAST (Semgrep)
