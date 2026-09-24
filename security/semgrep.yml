@@ -51,7 +51,7 @@ rules:
 
   - id: java-hardcoded-secret-assignment
     languages: [java]
-    severity: WARNING
+    severity: ERROR
     message: >-
       A field/variable named like a secret is assigned a hardcoded string
       literal. Externalize via environment variables or a secrets manager.
@@ -59,7 +59,7 @@ rules:
       - pattern-regex: '(?i)(password|secret|apikey|api_key|token)\s*=\s*"[^"\$]{4,}"'
     paths:
       exclude:
-        - "src/test/**"
+        - "**/src/test/**"
     metadata:
       cwe: "CWE-798: Use of Hard-coded Credentials"
 

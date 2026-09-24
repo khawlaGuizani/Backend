@@ -219,6 +219,16 @@ jobs:
             --config p/owasp-top-ten \
             --config p/secrets \
             --sarif --output semgrep-results.sarif \
+            --verbose
+
+      - name: Enforce blocking Semgrep findings
+        run: |
+          semgrep scan \
+            --config security/semgrep.yml \
+            --config p/java \
+            --config p/owasp-top-ten \
+            --config p/secrets \
+            --severity ERROR \
             --error
 
       - name: Verify Semgrep report
@@ -285,6 +295,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Cache Trivy databases
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-${{ runner.os }}-
+            trivy-db-
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -308,6 +327,7 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM
           ignore-unfixed: false
           exit-code: '0'
+          timeout: 15m
 
       - name: Download Trivy HTML template
         run: |
@@ -325,8 +345,10 @@ jobs:
           output: trivy-report.html
           severity: CRITICAL,HIGH,MEDIUM
           exit-code: '0'
+          timeout: 15m
 
       - name: Trivy scan - fail on CRITICAL with a fix available
+        id: trivy-blocking
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -334,6 +356,7 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: '1'
+          timeout: 15m
 
       - name: Upload Trivy SARIF to code scanning
         if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
