@@ -17,7 +17,6 @@ permissions:
   contents: read
   security-events: write
   actions: read
-  packages: write
 
 jobs:
   build-test-sonar:
@@ -59,8 +58,6 @@ jobs:
 
       - name: SonarCloud analysis
         if: ${{ env.SONAR_TOKEN != '' }}
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           ./mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
             -Dsonar.projectKey=khawlaGuizani_Backend \
@@ -84,6 +81,7 @@ jobs:
             target/surefire-reports/**
             target/site/jacoco/**
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Upload application JAR
         uses: actions/upload-artifact@v4
@@ -91,6 +89,7 @@ jobs:
           name: backend-jar
           path: target/*.jar
           retention-days: 7
+          if-no-files-found: warn
 
   gitleaks:
     name: Secret Scan (Gitleaks)
@@ -130,7 +129,7 @@ jobs:
             --redact --exit-code 0
 
       - name: Upload Gitleaks SARIF to code scanning
-        if: always()
+        if: ${{ always() && hashFiles('reports/gitleaks/gitleaks.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: reports/gitleaks/gitleaks.sarif
@@ -143,6 +142,7 @@ jobs:
           name: gitleaks-reports
           path: reports/gitleaks/**
           retention-days: 30
+          if-no-files-found: warn
 
   dependency-check:
     name: Dependency Scan (OWASP Dependency-Check)
@@ -162,9 +162,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.DC_DATA_DIR }}
-          key: dependency-check-db
+          key: dependency-check-db-${{ runner.os }}-${{ hashFiles('pom.xml') }}-${{ github.run_id }}
           restore-keys: |
-            dependency-check-db-
+            dependency-check-db-${{ runner.os }}-${{ hashFiles('pom.xml') }}-
+            dependency-check-db-${{ runner.os }}-
+
+      - name: Prepare Dependency-Check data directory
+        run: mkdir -p "$DC_DATA_DIR"
 
       - name: Run OWASP Dependency-Check
         env:
@@ -183,7 +187,7 @@ jobs:
             $NVD_ARGS
 
       - name: Upload Dependency-Check SARIF to code scanning
-        if: always()
+        if: ${{ always() && hashFiles('target/dependency-check-report.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: target/dependency-check-report.sarif
@@ -195,7 +199,8 @@ jobs:
         with:
           name: backend-dependency-check-reports
           path: target/dependency-check-report.*
-          retention-days: 100
+          retention-days: 30
+          if-no-files-found: warn
 
   semgrep:
     name: SAST (Semgrep)
@@ -214,10 +219,14 @@ jobs:
             --config p/owasp-top-ten \
             --config p/secrets \
             --sarif --output semgrep-results.sarif \
-            --error || true
+            --error
+
+      - name: Verify Semgrep report
+        if: always()
+        run: test -s semgrep-results.sarif
 
       - name: Upload Semgrep SARIF to code scanning
-        if: always()
+        if: ${{ always() && hashFiles('semgrep-results.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep-results.sarif
@@ -230,6 +239,7 @@ jobs:
           name: backend-semgrep-report
           path: semgrep-results.sarif
           retention-days: 30
+          if-no-files-found: warn
 
   license-scan:
     name: License Scan
@@ -248,17 +258,20 @@ jobs:
       - name: Generate third-party license report
         run: |
           ./mvnw -B org.codehaus.mojo:license-maven-plugin:2.4.0:aggregate-third-party-report \
-            -Dlicense.outputDirectory=target/licenses
+            -Dlicense.skipDownloadLicenses=true
+
+      - name: Verify license report
+        if: always()
+        run: test -s target/site/aggregate-third-party-report.html
 
       - name: Upload license report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-license-report
-
-
-          path: target/licenses/**
+          path: target/site/aggregate-third-party-report.html
           retention-days: 30
+          if-no-files-found: warn
 
   docker-image-security:
     name: Docker Build & Image Security (Trivy/Syft/Grype)
@@ -299,7 +312,9 @@ jobs:
       - name: Download Trivy HTML template
         run: |
           mkdir -p contrib
-          curl -L https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -o contrib/html.tpl
+          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 15 \
+            https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl \
+            -o contrib/html.tpl
 
       - name: Trivy scan - HTML report
         uses: aquasecurity/trivy-action@0.35.0
@@ -321,7 +336,7 @@ jobs:
           exit-code: '1'
 
       - name: Upload Trivy SARIF to code scanning
-        if: always()
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
@@ -351,8 +366,17 @@ jobs:
             trivy-results.sarif
             trivy-report.html
             sbom-backend.cyclonedx.json
-            ${{ steps.grype.outputs.sarif }}
           retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload Grype report
+        if: ${{ always() && steps.grype.outputs.sarif != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-grype-report
+          path: ${{ steps.grype.outputs.sarif }}
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Log in to GitHub Container Registry
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
@@ -397,8 +421,13 @@ jobs:
           echo "semgrep:                ${{ needs.semgrep.result }}"
           echo "license-scan:           ${{ needs.license-scan.result }}"
           echo "docker-image-security:  ${{ needs.docker-image-security.result }}"
-          if [ "${{ needs.build-test-sonar.result }}" != "success" ] || [ "${{ needs.gitleaks.result }}" != "success" ]; then
-            echo "::error::Security gate failed - build/tests or secret scanning did not pass."
+          if [ "${{ needs.build-test-sonar.result }}" != "success" ] || \
+             [ "${{ needs.gitleaks.result }}" != "success" ] || \
+             [ "${{ needs.dependency-check.result }}" != "success" ] || \
+             [ "${{ needs.semgrep.result }}" != "success" ] || \
+             [ "${{ needs.license-scan.result }}" != "success" ] || \
+             [ "${{ needs.docker-image-security.result }}" != "success" ]; then
+            echo "::error::Security gate failed: a required build or security control did not pass."
             exit 1
           fi
           echo "Security gate passed."
@@ -416,7 +445,7 @@ jobs:
     name: Deploy to K3s
     runs-on: self-hosted
     needs: [security-gate]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: ${{ needs.security-gate.result == 'success' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
     steps:
       - name: Deploy to K3s
         run: |
