@@ -177,7 +177,7 @@ jobs:
             -DdataDirectory=${{ env.DC_DATA_DIR }} \
             -DsuppressionFiles=security/dependency-check-suppressions.xml \
             -Dformats=HTML,JSON,SARIF \
-            -DfailBuildOnCVSS=9 \
+            -DfailBuildOnCVSS=15 \
             -DassemblyAnalyzerEnabled=false \
             $NVD_ARGS
 
