@@ -418,42 +418,42 @@ jobs:
           kubectl rollout status deployment/transport-backend -n transport --timeout=120s
           kubectl rollout status deployment/transport-frontend -n transport --timeout=120s
           echo "Deployment successful!"
-# 9. DAST — OWASP ZAP
-dast:
-  name: DAST — OWASP ZAP
-  runs-on: self-hosted
-  needs: [deploy]
-  if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-  continue-on-error: true
+  # 9. DAST — OWASP ZAP
+  dast:
+    name: DAST — OWASP ZAP
+    runs-on: self-hosted
+    needs: [deploy]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    continue-on-error: true
 
-  steps:
-    - name: Prepare ZAP reports
-      run: |
-        mkdir -p zap-reports
-        rm -f zap-reports/*
+    steps:
+      - name: Prepare ZAP reports
+        run: |
+          mkdir -p zap-reports
+          rm -f zap-reports/*
 
-    - name: Run OWASP ZAP Baseline Scan
-      run: |
-        docker run --rm \
-          --network host \
-          -v "$PWD/zap-reports:/zap/wrk/:rw" \
-          ghcr.io/zaproxy/zaproxy:stable \
-          zap-baseline.py \
-          -t http://192.168.205.150 \
-          -r zap-report.html \
-          -J zap-report.json \
-          -w zap-report.md || true
+      - name: Run OWASP ZAP Baseline Scan
+        run: |
+          docker run --rm \
+            --network host \
+            -v "$PWD/zap-reports:/zap/wrk/:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://192.168.205.150 \
+            -r zap-report.html \
+            -J zap-report.json \
+            -w zap-report.md || true
 
-    - name: Verify ZAP reports
-      if: always()
-      run: |
-        echo "=== ZAP REPORTS ==="
-        ls -lh zap-reports/ || true
+      - name: Verify ZAP reports
+        if: always()
+        run: |
+          echo "=== ZAP REPORTS ==="
+          ls -lh zap-reports/ || true
 
-    - name: Upload OWASP ZAP reports
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: backend-dast-zap-reports
-        path: zap-reports/
-        retention-days: 100
+      - name: Upload OWASP ZAP reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-dast-zap-reports
+          path: zap-reports/
+          retention-days: 100
