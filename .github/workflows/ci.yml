@@ -139,6 +139,7 @@ jobs:
           mkdir -p reports/gitleaks
 
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             -v "$PWD:/repo" \
             zricethezav/gitleaks:latest \
             detect \
@@ -157,6 +158,7 @@ jobs:
           mkdir -p reports/gitleaks
 
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             -v "$PWD:/repo" \
             zricethezav/gitleaks:latest \
             detect \
@@ -329,6 +331,11 @@ jobs:
           name: html-report-4-semgrep
           path: html-report/
           retention-days: 30
+
+      # Le conteneur Semgrep tourne en root : on rend les fichiers au user du runner
+      - name: Fix workspace permissions
+        if: always()
+        run: chown -R "$(stat -c '%u:%g' /__w)" "$GITHUB_WORKSPACE" || true
 
 
   # ============================================================
