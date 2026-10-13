@@ -12,6 +12,8 @@ env:
   JAVA_DISTRIBUTION: 'temurin'
   IMAGE_NAME: ghcr.io/khawlaguizani/backend
   DC_DATA_DIR: ${{ github.workspace }}/.dependency-check-data
+  # Générateur des rapports HTML (un rapport par job)
+  REPORT: python3 scripts/report_to_html.py
 
 permissions:
   contents: read
@@ -94,6 +96,22 @@ jobs:
             target/site/jacoco/**
           retention-days: 30
 
+      - name: HTML report — Build & Test (JUnit + JaCoCo)
+        if: always()
+        run: |
+          mkdir -p html-report
+          $REPORT junit target/surefire-reports html-report/build-test-report.html \
+            --jacoco target/site/jacoco/jacoco.csv
+          [ -d target/site/jacoco ] && cp -r target/site/jacoco html-report/jacoco || true
+
+      - name: Upload HTML report — Build & Test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-1-build-test
+          path: html-report/
+          retention-days: 30
+
       - name: Upload application JAR
         uses: actions/upload-artifact@v4
         with:
@@ -165,6 +183,18 @@ jobs:
           path: reports/gitleaks/**
           retention-days: 30
 
+      - name: HTML report — Gitleaks
+        if: always()
+        run: $REPORT gitleaks reports/gitleaks/gitleaks.json html-report/gitleaks-report.html
+
+      - name: Upload HTML report — Gitleaks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-2-gitleaks
+          path: html-report/
+          retention-days: 30
+
 
   # ============================================================
   # 3. OWASP DEPENDENCY-CHECK
@@ -227,6 +257,23 @@ jobs:
           path: target/dependency-check-report.*
           retention-days: 30
 
+      # Rapport HTML natif d'OWASP Dependency-Check (-Dformats=HTML)
+      - name: HTML report — Dependency-Check
+        if: always()
+        run: |
+          mkdir -p html-report
+          cp target/dependency-check-report.html html-report/dependency-check-report.html 2>/dev/null \
+            || $REPORT sarif target/dependency-check-report.sarif html-report/dependency-check-report.html \
+                 --title "OWASP Dependency-Check Report"
+
+      - name: Upload HTML report — Dependency-Check
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-3-dependency-check
+          path: html-report/
+          retention-days: 30
+
 
   # ============================================================
   # 4. SEMGREP - SAST
@@ -269,6 +316,20 @@ jobs:
           path: semgrep-results.sarif
           retention-days: 30
 
+      - name: HTML report — Semgrep
+        if: always()
+        run: |
+          python3 scripts/report_to_html.py sarif semgrep-results.sarif \
+            html-report/semgrep-report.html --title "Semgrep — SAST Report"
+
+      - name: Upload HTML report — Semgrep
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-4-semgrep
+          path: html-report/
+          retention-days: 30
+
 
   # ============================================================
   # 5. LICENSE SCAN
@@ -301,6 +362,22 @@ jobs:
         with:
           name: backend-license-report
           path: target/licenses/**
+          retention-days: 30
+
+      - name: HTML report — Licenses
+        if: always()
+        run: |
+          ./mvnw -B -q org.codehaus.mojo:license-maven-plugin:2.4.0:add-third-party \
+            -Dlicense.outputDirectory=target/licenses \
+            -Dlicense.thirdPartyFilename=THIRD-PARTY.txt || true
+          $REPORT licenses target/licenses html-report/license-report.html
+
+      - name: Upload HTML report — Licenses
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-5-licenses
+          path: html-report/
           retention-days: 30
 
 #-------------------
@@ -456,6 +533,26 @@ jobs:
           retention-days: 30
 
       # ========================================================
+      # HTML REPORTS — Trivy (natif) + SBOM + Grype
+      # ========================================================
+      - name: HTML report — Image security
+        if: always()
+        run: |
+          mkdir -p html-report
+          cp trivy-report.html html-report/trivy-report.html 2>/dev/null || true
+          $REPORT cyclonedx sbom-backend.cyclonedx.json html-report/sbom-report.html
+          $REPORT sarif "${{ steps.grype.outputs.sarif }}" html-report/grype-report.html \
+            --title "Grype — Image Vulnerability Report"
+
+      - name: Upload HTML report — Image security
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-6-image-security
+          path: html-report/
+          retention-days: 30
+
+      # ========================================================
       # GHCR LOGIN
       # ========================================================
       - name: Log in to GitHub Container Registry
@@ -504,6 +601,24 @@ jobs:
       DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
 
     steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: HTML report — Security Gate
+        if: always()
+        run: |
+          $REPORT gate - html-report/security-gate-report.html \
+            --blocking "Build & Test;Gitleaks" \
+            --results "Build & Test=${{ needs.build-test-sonar.result }},Gitleaks=${{ needs.gitleaks.result }},OWASP Dependency-Check=${{ needs.dependency-check.result }},Semgrep=${{ needs.semgrep.result }},License Scan=${{ needs.license-scan.result }},Docker Image Security=${{ needs.docker-image-security.result }}"
+
+      - name: Upload HTML report — Security Gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-7-security-gate
+          path: html-report/
+          retention-days: 30
 
       - name: Evaluate security gate
         run: |
@@ -558,8 +673,14 @@ jobs:
 
     steps:
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Deploy backend to K3s
+        shell: bash
         run: |
+          set -o pipefail
+          {
           echo "============================================"
           echo "        DEPLOYMENT TO K3S"
           echo "============================================"
@@ -581,6 +702,25 @@ jobs:
           echo "============================================"
           echo "       DEPLOYMENT SUCCESSFUL"
           echo "============================================"
+          } 2>&1 | tee deploy.log
+
+      - name: HTML report — Deploy K3s
+        if: always()
+        run: |
+          {
+            cat deploy.log 2>/dev/null
+            echo; echo "=== État du namespace transport ==="
+            kubectl get deploy,pods,svc -n transport -o wide 2>&1
+          } > deploy-full.log
+          $REPORT text deploy-full.log html-report/deploy-report.html --title "Deploy to K3s Report"
+
+      - name: Upload HTML report — Deploy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-8-deploy
+          path: html-report/
+          retention-days: 30
 
 
   # ============================================================
@@ -632,4 +772,56 @@ jobs:
         with:
           name: backend-dast-zap-reports
           path: zap-reports/
+          retention-days: 100
+
+      - name: Upload HTML report — ZAP
+        if: always() && hashFiles('zap-reports/zap-report.html') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-9-dast-zap
+          path: zap-reports/zap-report.html
+          retention-days: 100
+
+
+  # ============================================================
+  # 10. RAPPORT GLOBAL — tous les rapports HTML + index.html
+  # ============================================================
+  pipeline-reports:
+    name: Pipeline HTML Reports
+    runs-on: self-hosted
+
+    if: always()
+
+    needs:
+      - build-test-sonar
+      - gitleaks
+      - dependency-check
+      - semgrep
+      - license-scan
+      - docker-image-security
+      - security-gate
+      - deploy
+      - dast
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all HTML reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: html-report-*
+          path: pipeline-reports/
+
+      - name: Build index.html
+        run: |
+          $REPORT index pipeline-reports pipeline-reports/index.html \
+            --title "TransitFlow — Rapports de la pipeline #${{ github.run_number }}"
+
+      - name: Upload all HTML reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-html-reports
+          path: pipeline-reports/
           retention-days: 100
