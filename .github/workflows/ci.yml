@@ -411,8 +411,7 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker
+
       - name: Build backend Docker image
         uses: docker/build-push-action@v6
         with:
@@ -421,7 +420,8 @@ jobs:
           push: false
           load: true
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # ========================================================
       # TRIVY CACHE
@@ -560,7 +560,31 @@ jobs:
           retention-days: 30
 
       # ========================================================
+      # GHCR LOGIN
+      # ========================================================
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
+      # ========================================================
+      # PUSH IMAGE
+      # ========================================================
+      - name: Push image to GHCR
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
 
   # ============================================================
@@ -642,8 +666,8 @@ jobs:
             -d '{"event_type":"security-gate-passed"}'
 
 
-    # ============================================================
-      # 8. DEPLOYMENT K3S — déploie l'image scannée (même SHA)
+  # ============================================================
+  # 8. DEPLOYMENT K3S
   # ============================================================
   deploy:
     name: Deploy to K3s
@@ -654,60 +678,33 @@ jobs:
 
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
-    env:
-      DEPLOY_IMAGE: ghcr.io/khawlaguizani/backend:${{ github.sha }}
-
     steps:
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Deploy scanned image to K3s
+      - name: Deploy backend to K3s
         shell: bash
         run: |
+          set -o pipefail
           {
           echo "============================================"
           echo "        DEPLOYMENT TO K3S"
           echo "============================================"
-          echo "Image validée par le Security Gate : $DEPLOY_IMAGE"
 
-          # 1. L'image scannée (job 6) doit exister localement
-          if ! docker image inspect "$DEPLOY_IMAGE" > /dev/null 2>&1; then
-            echo "::error::Image $DEPLOY_IMAGE introuvable : le job Docker Image Security a échoué."
-            exit 1
-          fi
-          SCANNED_ID=$(docker image inspect -f '{{.Id}}' "$DEPLOY_IMAGE")
-          echo "Image ID scannée : $SCANNED_ID"
+          kubectl rollout restart deployment/transport-backend \
+            -n transport
 
-          # 2. Import dans k3s (local, sans registre) + protection contre le nettoyage
-          docker save "$DEPLOY_IMAGE" | sudo -n k3s ctr images import -
-          sudo -n k3s ctr images label "$DEPLOY_IMAGE" io.cri-containerd.pinned=pinned
+          kubectl rollout restart deployment/transport-frontend \
+            -n transport
 
-          # 3. Le deployment utilise exactement cette image
-          kubectl set image deployment/transport-backend backend="$DEPLOY_IMAGE" -n transport
-          kubectl annotate deployment/transport-backend -n transport --overwrite \
-            kubernetes.io/change-cause="CI run #${{ github.run_number }} - commit ${GITHUB_SHA::7}"
+          kubectl rollout status deployment/transport-backend \
+            -n transport \
+            --timeout=120s
 
-          if ! kubectl rollout status deployment/transport-backend -n transport --timeout=180s; then
-            echo "::error::Rollout échoué : retour à la version précédente."
-            kubectl rollout undo deployment/transport-backend -n transport
-            exit 1
-          fi
-
-          # 4. Preuve : image déployée = image scannée
-          echo
-          echo "=== Vérification ==="
-          echo "Image du deployment : $(kubectl get deploy transport-backend -n transport -o jsonpath='{.spec.template.spec.containers[0].image}')"
-          echo "Image ID des pods   : $(kubectl get pods -n transport -l app=transport-backend -o jsonpath='{.items[*].status.containerStatuses[0].imageID}')"
-          echo "Image ID scannée    : $SCANNED_ID"
-
-          # 5. Nettoyage (disque) : on garde seulement l'image actuelle
-          for img in $(sudo -n k3s ctr images ls -q | grep '^ghcr.io/khawlaguizani/backend:' | grep -v ":${GITHUB_SHA}$"); do
-            sudo -n k3s ctr images rm "$img" || true
-          done
-          docker images ghcr.io/khawlaguizani/backend --format '{{.Tag}}' \
-            | grep -vE "^(${GITHUB_SHA}|latest)$" \
-            | xargs -r -I{} docker rmi ghcr.io/khawlaguizani/backend:{} || true
+          kubectl rollout status deployment/transport-frontend \
+            -n transport \
+            --timeout=120s
 
           echo "============================================"
           echo "       DEPLOYMENT SUCCESSFUL"
@@ -719,8 +716,6 @@ jobs:
         run: |
           {
             cat deploy.log 2>/dev/null
-            echo; echo "=== Historique des déploiements ==="
-            kubectl rollout history deployment/transport-backend -n transport 2>&1
             echo; echo "=== État du namespace transport ==="
             kubectl get deploy,pods,svc -n transport -o wide 2>&1
           } > deploy-full.log
@@ -733,6 +728,7 @@ jobs:
           name: html-report-8-deploy
           path: html-report/
           retention-days: 30
+
 
   # ============================================================
   # 9. DAST - OWASP ZAP
