@@ -560,31 +560,7 @@ jobs:
           retention-days: 30
 
       # ========================================================
-      # GHCR LOGIN
-      # ========================================================
-      - name: Log in to GitHub Container Registry
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ========================================================
-      # PUSH IMAGE
-      # ========================================================
-      - name: Push image to GHCR
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
 
   # ============================================================
